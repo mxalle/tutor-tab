@@ -2,8 +2,10 @@
 
 import html
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from aiogram import Router
@@ -59,7 +61,7 @@ BUTTON_STATUSES = {
 
 
 async def _require_tutor(
-    session: AsyncSession, tg_id: int, answer
+    session: AsyncSession, tg_id: int, answer: Callable[[str], Awaitable[Any]]
 ) -> Tutor | None:
     """Resolve the sender to a tutor or explain why the command does not apply."""
     tutor = await get_tutor(session, tg_id)
