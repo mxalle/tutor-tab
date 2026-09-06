@@ -40,6 +40,9 @@ router = Router(name="tutor")
 NOT_A_TUTOR = (
     "Эта команда для репетиторов. Отправьте /start, чтобы зарегистрироваться."
 )
+# Telegram stops exposing message bodies after 48 hours; the button survives in
+# the chat but the message behind it can no longer be edited or replied to.
+TOO_OLD = "Сообщение слишком старое. Откройте список заново командой /today."
 
 STATUS_LABELS = {
     LessonStatus.planned: "🕓 Запланировано",
@@ -163,6 +166,9 @@ async def set_status_callback(
     if tutor is None:
         await callback.answer(NOT_A_TUTOR, show_alert=True)
         return
+    if not isinstance(callback.message, Message):
+        await callback.answer(TOO_OLD, show_alert=True)
+        return
 
     status = LessonStatus(callback_data.status)
     lesson = await set_lesson_status(
@@ -230,6 +236,9 @@ async def invite_callback(
     tutor = await get_tutor(session, callback.from_user.id)
     if tutor is None:
         await callback.answer(NOT_A_TUTOR, show_alert=True)
+        return
+    if not isinstance(callback.message, Message):
+        await callback.answer(TOO_OLD, show_alert=True)
         return
 
     student = await session.get(Student, callback_data.student_id)
