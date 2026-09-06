@@ -70,6 +70,9 @@ class Student(Base):
     payments: Mapped[list["Payment"]] = relationship(
         back_populates="student", cascade="all, delete-orphan"
     )
+    invites: Mapped[list["ParentInvite"]] = relationship(
+        back_populates="student", cascade="all, delete-orphan"
+    )
 
 
 class Lesson(Base):
@@ -90,6 +93,32 @@ class Lesson(Base):
     )
 
     student: Mapped["Student"] = relationship(back_populates="lessons")
+
+
+class ParentInvite(Base):
+    """One-shot link that binds a parent's Telegram chat to a student.
+
+    The tutor generates an invite in the bot, sends the deep link to the parent;
+    opening it writes the parent's chat id into `students.parent_chat_id` and
+    stamps `used_at`. Invites expire, see `app/services/invites.py`.
+    """
+
+    __tablename__ = "parent_invites"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    student_id: Mapped[int] = mapped_column(
+        ForeignKey("students.id", ondelete="CASCADE"), index=True
+    )
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    student: Mapped["Student"] = relationship(back_populates="invites")
 
 
 class Payment(Base):
