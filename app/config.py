@@ -16,5 +16,12 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://tutortab:tutortab@localhost:5432/tutortab"
     redis_url: str = "redis://localhost:6379/0"
 
+    # Telegram bot (separate process, see bot/main.py). Empty by default so the
+    # API keeps starting without it; the bot itself refuses to start without a token.
+    telegram_bot_token: str = ""
+    # Timezone the bot speaks in: "today", schedules and dates are rendered in it.
+    # Lessons themselves are always stored in UTC.
+    bot_timezone: str = "Europe/Moscow"
+
 
 settings = Settings()
