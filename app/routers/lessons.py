@@ -1,14 +1,33 @@
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_tutor
+from app.config import settings
 from app.database import get_session
 from app.models import Lesson, LessonStatus, Student, Tutor
-from app.schemas import LessonCreate, LessonOut, LessonStatusUpdate, LessonUpdate
+from app.schemas import (
+    LessonCreate,
+    LessonGenerate,
+    LessonOut,
+    LessonsGeneratedOut,
+    LessonStatusUpdate,
+    LessonUpdate,
+)
+from app.services.schedule import generate_lessons
 
 router = APIRouter(prefix="/lessons", tags=["lessons"])
+
+
+def _utc(moment: datetime) -> datetime:
+    """A filter bound as UTC: naive means UTC, aware is converted."""
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc)
 
 
 async def _get_owned_student(
@@ -55,11 +74,52 @@ async def create_lesson(
     return lesson
 
 
+@router.post(
+    "/generate",
+    response_model=LessonsGeneratedOut,
+    status_code=http_status.HTTP_201_CREATED,
+)
+async def generate_from_schedule(
+    payload: LessonGenerate,
+    tutor: Tutor = Depends(get_current_tutor),
+    session: AsyncSession = Depends(get_session),
+) -> LessonsGeneratedOut:
+    """Fill the next `days` days from the students' weekly schedule.
+
+    Lessons that already exist at the same minute are left alone, so calling
+    this twice changes nothing the second time.
+    """
+    if payload.student_id is not None:
+        students = [await _get_owned_student(session, payload.student_id, tutor.id)]
+    else:
+        result = await session.execute(
+            select(Student)
+            .where(Student.tutor_id == tutor.id, Student.is_active.is_(True))
+            .order_by(Student.id)
+        )
+        students = list(result.scalars().all())
+
+    generated = await generate_lessons(
+        session, students, ZoneInfo(settings.bot_timezone), days=payload.days
+    )
+    return LessonsGeneratedOut(
+        created=len(generated.created),
+        skipped=generated.skipped,
+        lessons=[LessonOut.model_validate(lesson) for lesson in generated.created],
+    )
+
+
 @router.get("", response_model=list[LessonOut])
 async def list_lessons(
     tutor: Tutor = Depends(get_current_tutor),
     student_id: int | None = Query(default=None),
     status: LessonStatus | None = Query(default=None),
+    starts_from: datetime | None = Query(
+        default=None, description="Lessons starting at or after this moment"
+    ),
+    starts_to: datetime | None = Query(
+        default=None, description="Lessons starting strictly before this moment"
+    ),
     session: AsyncSession = Depends(get_session),
 ) -> list[Lesson]:
     stmt = (
@@ -71,6 +131,12 @@ async def list_lessons(
         stmt = stmt.where(Lesson.student_id == student_id)
     if status is not None:
         stmt = stmt.where(Lesson.status == status)
+    # The Mini App sends the bounds of the viewer's local day, so they arrive
+    # with the phone's offset and are moved to UTC before being compared.
+    if starts_from is not None:
+        stmt = stmt.where(Lesson.starts_at >= _utc(starts_from))
+    if starts_to is not None:
+        stmt = stmt.where(Lesson.starts_at < _utc(starts_to))
     result = await session.execute(stmt.order_by(Lesson.starts_at, Lesson.id))
     return list(result.scalars().all())
 

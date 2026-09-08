@@ -18,12 +18,13 @@ app/main.py            FastAPI app, lifespan, /health
 app/auth.py            Telegram initData check, get_current_tutor
 app/config.py          Settings (pydantic-settings, .env)
 app/database.py        async engine, session factory, get_session, Base
-app/models.py          Tutor, Student, Lesson, Payment, ParentInvite
+app/models.py          Tutor, Student, ScheduleSlot, Lesson, Payment, ParentInvite
 app/schemas.py         pydantic request/response models
 app/routers/           students.py, lessons.py, payments.py
 app/services/balance.py balance calculation
 app/services/invites.py parent invite issue / redeem
 app/services/lessons.py local date ranges, ownership-checked status changes
+app/services/schedule.py weekly slots -> lessons, without duplicates
 app/services/tutors.py  tutor lookup / registration (shared by API and bot)
 bot/main.py            bot entrypoint (long polling)
 bot/handlers/          start.py (both roles), tutor.py, parent.py
@@ -43,6 +44,7 @@ tests/                 pytest suite
    a debt reads as `−3 000 ₽`. Flip it in one place only, never in both.
 2. When a lesson is created, the student's current `price` is copied into
    `lessons.price_snapshot`, so later price changes do not rewrite history.
+   This holds for generated lessons too.
 3. **Auth is Telegram `initData`.** Every endpoint depends on
    `get_current_tutor` (`app/auth.py`), which reads `Authorization: tma <initData>`,
    checks the HMAC signature against the bot token, refuses anything older than
@@ -51,7 +53,7 @@ tests/                 pytest suite
    ignored in production.
 4. Endpoints: CRUD for students / lessons / payments (always scoped to the
    authenticated tutor), `GET /students/{id}/balance`, `GET /tutors/me/summary`,
-   `PATCH /lessons/{id}/status`.
+   `PATCH /lessons/{id}/status`, `POST /lessons/generate`.
 5. **The bot never calls the API.** It shares the database and goes through
    `app/services/*` with a session injected by `DbSessionMiddleware`. Keep the
    logic in services and the handlers thin, so tests can skip aiogram entirely.
@@ -61,7 +63,11 @@ tests/                 pytest suite
    parent `/start parent_<token>`, `/balance`. One account can be both roles.
 8. Tests must cover `balance.py`, the main endpoints, invites and lesson status
    changes, and must all pass.
-9. Keep it small. No extra abstractions, layers or features beyond the list above.
+9. A student may have recurring `schedule_slots` (weekday 0-6 Monday-first,
+   local wall-clock time in `BOT_TIMEZONE`). `POST /lessons/generate` turns them
+   into planned lessons N days ahead and never creates a second lesson at a
+   minute that already has one.
+10. Keep it small. No extra abstractions, layers or features beyond the list above.
 
 ## Commands
 

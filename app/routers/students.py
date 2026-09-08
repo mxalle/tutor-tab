@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_tutor
 from app.database import get_session
-from app.models import Student, Tutor
+from app.models import ScheduleSlot, Student, Tutor
 from app.schemas import (
     BalanceOut,
     StudentBalanceOut,
@@ -44,7 +44,11 @@ async def create_student(
     tutor: Tutor = Depends(get_current_tutor),
     session: AsyncSession = Depends(get_session),
 ) -> Student:
-    student = Student(tutor_id=tutor.id, **payload.model_dump())
+    student = Student(
+        tutor_id=tutor.id,
+        **payload.model_dump(exclude={"schedule"}),
+        schedule=[ScheduleSlot(**slot.model_dump()) for slot in payload.schedule],
+    )
     session.add(student)
     await session.commit()
     await session.refresh(student)
@@ -83,8 +87,15 @@ async def update_student(
     student = await _get_owned_student(session, student_id, tutor.id)
     # Changing `price` only affects future lessons: existing lessons keep the
     # price_snapshot taken when they were created.
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    fields = payload.model_dump(exclude_unset=True, exclude={"schedule"})
+    for field, value in fields.items():
         setattr(student, field, value)
+    if payload.schedule is not None:
+        # The schedule is replaced wholesale; lessons already generated from
+        # the old slots stay where they are.
+        student.schedule = [
+            ScheduleSlot(**slot.model_dump()) for slot in payload.schedule
+        ]
     await session.commit()
     await session.refresh(student)
     return student

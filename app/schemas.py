@@ -1,4 +1,5 @@
 from datetime import datetime
+from datetime import time as time_of_day
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -6,6 +7,24 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.models import LessonStatus
 
 Money = Field(max_digits=10, decimal_places=2)
+
+
+# --- schedule ---------------------------------------------------------------
+
+
+class ScheduleSlotIn(BaseModel):
+    """A recurring weekly slot: weekday 0-6 (Monday first) and a local time."""
+
+    weekday: int = Field(ge=0, le=6)
+    time: time_of_day
+    is_active: bool = True
+
+
+class ScheduleSlotOut(ScheduleSlotIn):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    student_id: int
 
 
 # --- students ---------------------------------------------------------------
@@ -16,6 +35,7 @@ class StudentCreate(BaseModel):
     price: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
     parent_chat_id: int | None = None
     is_active: bool = True
+    schedule: list[ScheduleSlotIn] = Field(default_factory=list)
 
 
 class StudentUpdate(BaseModel):
@@ -23,6 +43,8 @@ class StudentUpdate(BaseModel):
     price: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
     parent_chat_id: int | None = None
     is_active: bool | None = None
+    # When present, replaces the whole schedule; omit it to leave it alone.
+    schedule: list[ScheduleSlotIn] | None = None
 
 
 class StudentOut(BaseModel):
@@ -35,6 +57,7 @@ class StudentOut(BaseModel):
     parent_chat_id: int | None
     is_active: bool
     created_at: datetime
+    schedule: list[ScheduleSlotOut] = Field(default_factory=list)
 
 
 # --- lessons ----------------------------------------------------------------
@@ -56,6 +79,14 @@ class LessonStatusUpdate(BaseModel):
     status: LessonStatus
 
 
+class LessonGenerate(BaseModel):
+    """Fill the calendar from the weekly schedule, `days` ahead of today."""
+
+    days: int = Field(default=14, ge=1, le=90)
+    # None means every active student of the tutor.
+    student_id: int | None = None
+
+
 class LessonOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -65,6 +96,12 @@ class LessonOut(BaseModel):
     status: LessonStatus
     price_snapshot: Decimal
     created_at: datetime
+
+
+class LessonsGeneratedOut(BaseModel):
+    created: int
+    skipped: int
+    lessons: list[LessonOut]
 
 
 # --- payments ---------------------------------------------------------------

@@ -1,16 +1,19 @@
 import enum
 from datetime import datetime
+from datetime import time as time_of_day
 from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
     Numeric,
     String,
     Text,
+    Time,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -73,6 +76,38 @@ class Student(Base):
     invites: Mapped[list["ParentInvite"]] = relationship(
         back_populates="student", cascade="all, delete-orphan"
     )
+    # Always loaded: a student is never shown without their schedule, and lazy
+    # loading would blow up under async.
+    schedule: Mapped[list["ScheduleSlot"]] = relationship(
+        back_populates="student",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="ScheduleSlot.weekday, ScheduleSlot.time, ScheduleSlot.id",
+    )
+
+
+class ScheduleSlot(Base):
+    """One recurring weekly slot of a student: "Tuesdays at 17:00".
+
+    `weekday` follows `date.weekday()` — 0 is Monday, 6 is Sunday. `time` is
+    local wall-clock time in `settings.bot_timezone`; lessons generated from a
+    slot are converted to UTC, so a slot survives a DST change unmoved.
+    """
+
+    __tablename__ = "schedule_slots"
+    __table_args__ = (
+        CheckConstraint("weekday >= 0 AND weekday <= 6", name="ck_schedule_slots_weekday"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    student_id: Mapped[int] = mapped_column(
+        ForeignKey("students.id", ondelete="CASCADE"), index=True
+    )
+    weekday: Mapped[int] = mapped_column()
+    time: Mapped[time_of_day] = mapped_column(Time)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+
+    student: Mapped["Student"] = relationship(back_populates="schedule")
 
 
 class Lesson(Base):
