@@ -15,6 +15,7 @@ have a parent attached (`parent_chat_id`) — the bot will send reminders there 
 
 ```
 app/main.py            FastAPI app, lifespan, /health
+app/auth.py            Telegram initData check, get_current_tutor
 app/config.py          Settings (pydantic-settings, .env)
 app/database.py        async engine, session factory, get_session, Base
 app/models.py          Tutor, Student, Lesson, Payment, ParentInvite
@@ -23,6 +24,7 @@ app/routers/           students.py, lessons.py, payments.py
 app/services/balance.py balance calculation
 app/services/invites.py parent invite issue / redeem
 app/services/lessons.py local date ranges, ownership-checked status changes
+app/services/tutors.py  tutor lookup / registration (shared by API and bot)
 bot/main.py            bot entrypoint (long polling)
 bot/handlers/          start.py (both roles), tutor.py, parent.py
 bot/formatting.py      russian money / dates / plurals
@@ -41,10 +43,15 @@ tests/                 pytest suite
    a debt reads as `−3 000 ₽`. Flip it in one place only, never in both.
 2. When a lesson is created, the student's current `price` is copied into
    `lessons.price_snapshot`, so later price changes do not rewrite history.
-3. **No auth yet.** Every endpoint takes `tutor_id` as a query parameter.
-   Each router carries a `TODO` about validating Telegram `initData` instead.
-4. Endpoints: CRUD for students / lessons / payments (always scoped by `tutor_id`),
-   `GET /students/{id}/balance`, `GET /tutors/{id}/summary`, `PATCH /lessons/{id}/status`.
+3. **Auth is Telegram `initData`.** Every endpoint depends on
+   `get_current_tutor` (`app/auth.py`), which reads `Authorization: tma <initData>`,
+   checks the HMAC signature against the bot token, refuses anything older than
+   24 hours and resolves (or registers) the tutor. No endpoint takes a `tutor_id`.
+   With `DEBUG=true` an `X-Debug-Tutor-Id` header stands in for it locally; it is
+   ignored in production.
+4. Endpoints: CRUD for students / lessons / payments (always scoped to the
+   authenticated tutor), `GET /students/{id}/balance`, `GET /tutors/me/summary`,
+   `PATCH /lessons/{id}/status`.
 5. **The bot never calls the API.** It shares the database and goes through
    `app/services/*` with a session injected by `DbSessionMiddleware`. Keep the
    logic in services and the handlers thin, so tests can skip aiogram entirely.

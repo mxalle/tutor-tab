@@ -1,18 +1,35 @@
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
 from decimal import Decimal
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from app.config import settings
 from app.database import Base, get_session
 from app.main import app
 from app.models import Student, Tutor
+from tests.initdata import TEST_BOT_TOKEN
 
 # Tests run on in-memory SQLite so they do not need Docker/Postgres.
 TEST_DATABASE_URL = "sqlite+aiosqlite://"
+
+
+@pytest.fixture(autouse=True)
+def settings_for_tests() -> Iterator[None]:
+    """Pin the settings auth depends on, whatever the local `.env` says.
+
+    The bot token signs `initData`, so tests must use a known one; `debug` is
+    forced off so the `X-Debug-Tutor-Id` escape hatch stays closed unless a
+    test opens it explicitly.
+    """
+    token, debug = settings.telegram_bot_token, settings.debug
+    settings.telegram_bot_token, settings.debug = TEST_BOT_TOKEN, False
+    yield
+    settings.telegram_bot_token, settings.debug = token, debug
 
 
 @pytest_asyncio.fixture

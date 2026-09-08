@@ -5,6 +5,7 @@ from fastapi import status as http_status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import get_current_tutor
 from app.database import get_session
 from app.models import Student, Tutor
 from app.schemas import (
@@ -23,8 +24,6 @@ from app.services.balance import (
     month_bounds,
 )
 
-# TODO: drop the `tutor_id` query parameter once auth exists — the tutor must be
-# resolved from validated Telegram WebApp initData instead of being client-supplied.
 router = APIRouter(tags=["students"])
 
 
@@ -42,13 +41,10 @@ async def _get_owned_student(
 )
 async def create_student(
     payload: StudentCreate,
-    tutor_id: int = Query(...),
+    tutor: Tutor = Depends(get_current_tutor),
     session: AsyncSession = Depends(get_session),
 ) -> Student:
-    if await session.get(Tutor, tutor_id) is None:
-        raise HTTPException(status_code=404, detail="Tutor not found")
-
-    student = Student(tutor_id=tutor_id, **payload.model_dump())
+    student = Student(tutor_id=tutor.id, **payload.model_dump())
     session.add(student)
     await session.commit()
     await session.refresh(student)
@@ -57,11 +53,11 @@ async def create_student(
 
 @router.get("/students", response_model=list[StudentOut])
 async def list_students(
-    tutor_id: int = Query(...),
     is_active: bool | None = Query(default=None),
+    tutor: Tutor = Depends(get_current_tutor),
     session: AsyncSession = Depends(get_session),
 ) -> list[Student]:
-    stmt = select(Student).where(Student.tutor_id == tutor_id)
+    stmt = select(Student).where(Student.tutor_id == tutor.id)
     if is_active is not None:
         stmt = stmt.where(Student.is_active.is_(is_active))
     result = await session.execute(stmt.order_by(Student.id))
@@ -71,20 +67,20 @@ async def list_students(
 @router.get("/students/{student_id}", response_model=StudentOut)
 async def get_student(
     student_id: int,
-    tutor_id: int = Query(...),
+    tutor: Tutor = Depends(get_current_tutor),
     session: AsyncSession = Depends(get_session),
 ) -> Student:
-    return await _get_owned_student(session, student_id, tutor_id)
+    return await _get_owned_student(session, student_id, tutor.id)
 
 
 @router.patch("/students/{student_id}", response_model=StudentOut)
 async def update_student(
     student_id: int,
     payload: StudentUpdate,
-    tutor_id: int = Query(...),
+    tutor: Tutor = Depends(get_current_tutor),
     session: AsyncSession = Depends(get_session),
 ) -> Student:
-    student = await _get_owned_student(session, student_id, tutor_id)
+    student = await _get_owned_student(session, student_id, tutor.id)
     # Changing `price` only affects future lessons: existing lessons keep the
     # price_snapshot taken when they were created.
     for field, value in payload.model_dump(exclude_unset=True).items():
@@ -97,12 +93,12 @@ async def update_student(
 @router.delete("/students/{student_id}", status_code=http_status.HTTP_204_NO_CONTENT)
 async def delete_student(
     student_id: int,
-    tutor_id: int = Query(...),
+    tutor: Tutor = Depends(get_current_tutor),
     session: AsyncSession = Depends(get_session),
 ) -> None:
     # Hard delete, lessons and payments go with it. To keep the history instead,
     # PATCH the student with is_active=false.
-    student = await _get_owned_student(session, student_id, tutor_id)
+    student = await _get_owned_student(session, student_id, tutor.id)
     await session.delete(student)
     await session.commit()
 
@@ -110,23 +106,20 @@ async def delete_student(
 @router.get("/students/{student_id}/balance", response_model=BalanceOut)
 async def student_balance(
     student_id: int,
-    tutor_id: int = Query(...),
+    tutor: Tutor = Depends(get_current_tutor),
     session: AsyncSession = Depends(get_session),
 ) -> BalanceOut:
-    await _get_owned_student(session, student_id, tutor_id)
+    await _get_owned_student(session, student_id, tutor.id)
     return BalanceOut.model_validate(await get_balance(session, student_id))
 
 
-@router.get("/tutors/{tutor_id}/summary", response_model=TutorSummaryOut, tags=["tutors"])
+@router.get("/tutors/me/summary", response_model=TutorSummaryOut, tags=["tutors"])
 async def tutor_summary(
-    tutor_id: int,
+    tutor: Tutor = Depends(get_current_tutor),
     session: AsyncSession = Depends(get_session),
 ) -> TutorSummaryOut:
-    if await session.get(Tutor, tutor_id) is None:
-        raise HTTPException(status_code=404, detail="Tutor not found")
-
     result = await session.execute(
-        select(Student).where(Student.tutor_id == tutor_id).order_by(Student.id)
+        select(Student).where(Student.tutor_id == tutor.id).order_by(Student.id)
     )
     students = list(result.scalars().all())
     balances = await get_balances(session, [s.id for s in students])
@@ -146,9 +139,9 @@ async def tutor_summary(
     month_start, _ = month_bounds()
 
     return TutorSummaryOut(
-        tutor_id=tutor_id,
+        tutor_id=tutor.id,
         students=rows,
         total_debt=total_debt,
         month_start=month_start,
-        month_income=await get_month_income(session, tutor_id),
+        month_income=await get_month_income(session, tutor.id),
     )
