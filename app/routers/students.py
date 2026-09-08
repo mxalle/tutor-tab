@@ -6,10 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_tutor
+from app.config import settings
 from app.database import get_session
 from app.models import ScheduleSlot, Student, Tutor
 from app.schemas import (
     BalanceOut,
+    ParentInviteOut,
     StudentBalanceOut,
     StudentCreate,
     StudentOut,
@@ -23,6 +25,7 @@ from app.services.balance import (
     get_month_income,
     month_bounds,
 )
+from app.services.invites import create_invite
 
 router = APIRouter(tags=["students"])
 
@@ -122,6 +125,36 @@ async def student_balance(
 ) -> BalanceOut:
     await _get_owned_student(session, student_id, tutor.id)
     return BalanceOut.model_validate(await get_balance(session, student_id))
+
+
+@router.post(
+    "/students/{student_id}/invite",
+    response_model=ParentInviteOut,
+    status_code=http_status.HTTP_201_CREATED,
+)
+async def issue_parent_invite(
+    student_id: int,
+    tutor: Tutor = Depends(get_current_tutor),
+    session: AsyncSession = Depends(get_session),
+) -> ParentInviteOut:
+    """A one-shot link a parent opens to see their child's balance.
+
+    The same invite the bot hands out with /invite; the Mini App needs it too,
+    and issuing it here keeps both on one implementation.
+    """
+    student = await _get_owned_student(session, student_id, tutor.id)
+    invite = await create_invite(session, student.id)
+    link = (
+        f"https://t.me/{settings.bot_username}?start=parent_{invite.token}"
+        if settings.bot_username
+        else None
+    )
+    return ParentInviteOut(
+        student_id=student.id,
+        token=invite.token,
+        link=link,
+        expires_at=invite.expires_at,
+    )
 
 
 @router.get("/tutors/me/summary", response_model=TutorSummaryOut, tags=["tutors"])

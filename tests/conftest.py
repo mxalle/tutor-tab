@@ -26,10 +26,12 @@ def settings_for_tests() -> Iterator[None]:
     forced off so the `X-Debug-Tutor-Id` escape hatch stays closed unless a
     test opens it explicitly.
     """
-    token, debug = settings.telegram_bot_token, settings.debug
-    settings.telegram_bot_token, settings.debug = TEST_BOT_TOKEN, False
+    saved = (settings.telegram_bot_token, settings.debug, settings.bot_username)
+    settings.telegram_bot_token = TEST_BOT_TOKEN
+    settings.debug = False
+    settings.bot_username = "tutortab_bot"
     yield
-    settings.telegram_bot_token, settings.debug = token, debug
+    (settings.telegram_bot_token, settings.debug, settings.bot_username) = saved
 
 
 @pytest_asyncio.fixture

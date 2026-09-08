@@ -60,6 +60,19 @@ class StudentOut(BaseModel):
     schedule: list[ScheduleSlotOut] = Field(default_factory=list)
 
 
+class ParentInviteOut(BaseModel):
+    """A freshly issued one-shot invite for a student's parent.
+
+    `link` is None when `BOT_USERNAME` is not configured — the token is still
+    valid, it just cannot be rendered as a deep link here.
+    """
+
+    student_id: int
+    token: str
+    link: str | None
+    expires_at: datetime
+
+
 # --- lessons ----------------------------------------------------------------
 
 

@@ -3,9 +3,11 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models import ParentInvite, Student, Tutor
 from app.services.invites import (
     INVITE_TTL,
@@ -14,6 +16,7 @@ from app.services.invites import (
     redeem_invite,
     students_by_parent_chat,
 )
+from tests.initdata import auth
 
 NOW = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
 PARENT_CHAT = 555001
@@ -159,3 +162,58 @@ async def test_deleting_a_student_removes_its_invites(
 
     left = (await session.execute(select(ParentInvite))).scalars().all()
     assert left == []
+
+
+# --- the API endpoint the Mini App uses -------------------------------------
+
+
+async def test_invite_endpoint_returns_a_deep_link(
+    client: AsyncClient, tutor: Tutor, student: Student
+) -> None:
+    settings.bot_username = "tutortab_bot"
+
+    response = await client.post(
+        f"/students/{student.id}/invite", headers=auth(tutor)
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["student_id"] == student.id
+    assert body["link"] == f"https://t.me/tutortab_bot?start=parent_{body['token']}"
+
+
+async def test_invite_endpoint_issues_a_working_token(
+    client: AsyncClient, session: AsyncSession, tutor: Tutor, student: Student
+) -> None:
+    token = (
+        await client.post(f"/students/{student.id}/invite", headers=auth(tutor))
+    ).json()["token"]
+
+    result = await redeem_invite(session, token, parent_chat_id=4242)
+
+    assert result.ok
+    assert result.student.parent_chat_id == 4242
+
+
+async def test_invite_endpoint_without_a_bot_username(
+    client: AsyncClient, tutor: Tutor, student: Student
+) -> None:
+    """The token is still usable — only the link cannot be built."""
+    settings.bot_username = ""
+
+    body = (
+        await client.post(f"/students/{student.id}/invite", headers=auth(tutor))
+    ).json()
+
+    assert body["link"] is None
+    assert body["token"]
+
+
+async def test_cannot_invite_to_another_tutors_student(
+    client: AsyncClient, student: Student, other_tutor: Tutor
+) -> None:
+    response = await client.post(
+        f"/students/{student.id}/invite", headers=auth(other_tutor)
+    )
+
+    assert response.status_code == 404

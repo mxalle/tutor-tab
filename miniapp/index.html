@@ -1,0 +1,1059 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>TutorTab</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+/* Colours come from Telegram: every value is a --tg-theme-* variable with a
+   fallback for the case the page is opened outside the client. */
+:root {
+  --bg: var(--tg-theme-bg-color, #ffffff);
+  --secondary-bg: var(--tg-theme-secondary-bg-color, #f0f0f5);
+  --section-bg: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #ffffff));
+  --text: var(--tg-theme-text-color, #14161a);
+  --hint: var(--tg-theme-hint-color, #8b8f96);
+  --subtitle: var(--tg-theme-subtitle-text-color, var(--tg-theme-hint-color, #8b8f96));
+  --link: var(--tg-theme-link-color, #2481cc);
+  --accent: var(--tg-theme-button-color, #2481cc);
+  --accent-text: var(--tg-theme-button-text-color, #ffffff);
+  --destructive: var(--tg-theme-destructive-text-color, #df3f40);
+  --separator: var(--tg-theme-section-separator-color, rgba(128, 128, 128, .22));
+  /* Telegram has no "money is fine" colour, so an advance gets a fixed green. */
+  --positive: #1f9d55;
+  --radius: 14px;
+  --nav-height: 58px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: var(--tg-theme-bg-color, #17212b);
+    --secondary-bg: var(--tg-theme-secondary-bg-color, #0e1621);
+    --section-bg: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #17212b));
+    --text: var(--tg-theme-text-color, #f5f5f5);
+    --hint: var(--tg-theme-hint-color, #8d9aa8);
+    --separator: var(--tg-theme-section-separator-color, rgba(255, 255, 255, .12));
+    --positive: #4bcf74;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { overflow-x: hidden; }
+body {
+  margin: 0;
+  background: var(--secondary-bg);
+  color: var(--text);
+  font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain;
+}
+button, input, select { font: inherit; color: inherit; }
+
+/* --- layout --------------------------------------------------------------- */
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--separator);
+}
+header h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+main {
+  padding: 12px 16px calc(var(--nav-height) + 28px + env(safe-area-inset-bottom, 0px));
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  display: flex;
+  background: var(--bg);
+  border-top: 1px solid var(--separator);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+nav button {
+  flex: 1;
+  min-height: var(--nav-height);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 0;
+  background: none;
+  color: var(--hint);
+  font-size: 11px;
+  cursor: pointer;
+}
+nav button[aria-current="page"] { color: var(--accent); }
+nav svg { width: 24px; height: 24px; fill: currentColor; }
+
+/* --- pieces --------------------------------------------------------------- */
+
+.card {
+  background: var(--section-bg);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  border: 1px solid var(--separator);
+}
+.card.tappable { cursor: pointer; }
+.card.tappable:active { opacity: .7; }
+
+.row { display: flex; align-items: center; gap: 12px; }
+.grow { flex: 1; min-width: 0; }
+.name { font-weight: 600; overflow-wrap: anywhere; }
+.muted { color: var(--hint); font-size: 14px; }
+.time { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 17px; }
+.amount { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+.debt { color: var(--destructive); }
+.advance { color: var(--positive); }
+.tag {
+  display: inline-block;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--secondary-bg);
+  color: var(--hint);
+}
+.tag.on { color: var(--positive); }
+
+.actions { display: flex; gap: 8px; margin-top: 12px; }
+button.act {
+  flex: 1;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--separator);
+  border-radius: 11px;
+  background: var(--secondary-bg);
+  color: var(--text);
+  cursor: pointer;
+}
+button.act:active { opacity: .7; }
+button.act[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+button.primary {
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+  cursor: pointer;
+}
+button.primary:active { opacity: .8; }
+button.primary[disabled] { opacity: .5; }
+button.ghost {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--separator);
+  border-radius: 11px;
+  background: none;
+  color: var(--link);
+  cursor: pointer;
+}
+button.icon {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.status { font-size: 14px; }
+.status.done { color: var(--positive); }
+.status.cancelled { color: var(--destructive); }
+.status.planned { color: var(--hint); }
+
+h2.section {
+  margin: 22px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--hint);
+}
+
+.empty { text-align: center; padding: 44px 20px; color: var(--hint); }
+.empty .face { font-size: 40px; display: block; margin-bottom: 12px; }
+.empty p { margin: 0 0 6px; }
+
+.loading { text-align: center; padding: 44px 20px; color: var(--hint); }
+.spinner {
+  width: 26px;
+  height: 26px;
+  margin: 0 auto 12px;
+  border: 2px solid var(--separator);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.error {
+  border: 1px solid var(--destructive);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.error p { margin: 0 0 12px; }
+
+.total {
+  background: var(--section-bg);
+  border: 1px solid var(--separator);
+  border-radius: var(--radius);
+  padding: 18px 16px;
+  margin-bottom: 10px;
+  text-align: center;
+}
+.total .value { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.total .label { color: var(--hint); font-size: 14px; margin-top: 4px; }
+
+label.field { display: block; margin-bottom: 14px; }
+label.field span { display: block; font-size: 14px; color: var(--hint); margin-bottom: 6px; }
+input[type="text"], input[type="number"], input[type="time"] {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--separator);
+  border-radius: 11px;
+  background: var(--bg);
+  color: var(--text);
+}
+input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.days { display: flex; flex-wrap: wrap; gap: 8px; }
+.days label {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--separator);
+  border-radius: 11px;
+  background: var(--bg);
+  cursor: pointer;
+  user-select: none;
+  font-size: 15px;
+}
+.days input { position: absolute; opacity: 0; pointer-events: none; }
+.days label.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: rgba(0, 0, 0, .45);
+  display: flex;
+  align-items: flex-end;
+}
+.sheet {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  background: var(--bg);
+  border-radius: 18px 18px 0 0;
+  padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+}
+.sheet h2 { margin: 0 0 14px; font-size: 18px; }
+.sheet .actions { margin-top: 16px; }
+
+.hint-line { color: var(--hint); font-size: 13px; margin: 8px 0 0; overflow-wrap: anywhere; }
+.link-box {
+  background: var(--secondary-bg);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: 10px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <button class="icon" id="back" hidden>‹ Назад</button>
+  <h1 id="title">Сегодня</h1>
+  <button class="icon" id="header-action" hidden></button>
+</header>
+
+<main id="screen"></main>
+
+<nav id="nav">
+  <button data-tab="today" aria-current="page">
+    <svg viewBox="0 0 24 24"><path d="M7 2h2v2h6V2h2v2h2a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2V2zm12 8H5v9h14v-9z"/></svg>
+    <span>Сегодня</span>
+  </button>
+  <button data-tab="students">
+    <svg viewBox="0 0 24 24"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z"/></svg>
+    <span>Ученики</span>
+  </button>
+  <button data-tab="money">
+    <svg viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2H3V6zm0 4h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-8zm3 5h6v2H6v-2z"/></svg>
+    <span>Деньги</span>
+  </button>
+</nav>
+
+<script>
+"use strict";
+
+const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+if (tg) { tg.ready(); tg.expand(); }
+
+/* --- Telegram plumbing ---------------------------------------------------- */
+
+function haptic(kind) {
+  const hf = tg && tg.HapticFeedback;
+  if (!hf) return;
+  try {
+    if (kind === "success" || kind === "error" || kind === "warning") {
+      hf.notificationOccurred(kind);
+    } else {
+      hf.impactOccurred(kind || "light");
+    }
+  } catch (e) { /* older clients simply have no haptics */ }
+}
+
+/* Opened outside Telegram there is no initData; `?tutor=<id>` then falls back
+   to the X-Debug-Tutor-Id header, which the API honours only with DEBUG=true. */
+const initData = tg && tg.initData ? tg.initData : "";
+/* telegram-web-app.js defines window.Telegram even in an ordinary browser, so
+   "are we really inside a client?" is decided by initData, not by the object. */
+const inTelegram = Boolean(initData);
+const debugTutorId = new URLSearchParams(location.search).get("tutor");
+
+class ApiError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function api(path, options) {
+  const opts = options || {};
+  const headers = {};
+  if (initData) headers["Authorization"] = "tma " + initData;
+  else if (debugTutorId) headers["X-Debug-Tutor-Id"] = debugTutorId;
+  if (opts.body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    opts.body = JSON.stringify(opts.body);
+  }
+  if (!initData && !debugTutorId) {
+    throw new ApiError(0, "Откройте приложение через бота в Telegram — так я пойму, кто вы.");
+  }
+
+  let response;
+  try {
+    response = await fetch(path, Object.assign({}, opts, { headers: headers }));
+  } catch (e) {
+    throw new ApiError(0, "Нет связи с сервером. Проверьте интернет и попробуйте снова.");
+  }
+  if (response.status === 401) {
+    throw new ApiError(401, "Telegram не подтвердил вход. Закройте приложение и откройте заново.");
+  }
+  if (response.status === 404) throw new ApiError(404, "Не найдено — возможно, запись уже удалили.");
+  if (!response.ok) {
+    throw new ApiError(response.status, "Сервер ответил ошибкой " + response.status + ".");
+  }
+  if (response.status === 204) return null;
+  return response.json();
+}
+
+/* --- formatting ----------------------------------------------------------- */
+
+const NBSP = " ";
+const MINUS = "−";
+const WEEKDAYS_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+const WEEKDAYS_LONG = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"];
+const MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня",
+                "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+
+function esc(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
+function money(amount) {
+  const value = Math.round(Number(amount) || 0);
+  const sign = value < 0 ? MINUS : "";
+  const digits = String(Math.abs(value)).replace(/\B(?=(\d{3})+(?!\d))/g, NBSP);
+  return sign + digits + NBSP + "₽";
+}
+
+/* The API returns a positive balance when the student owes money (see
+   app/services/balance.py). Instead of flipping the sign the way the bot does,
+   the amount is always shown positive and its meaning carried by the word and
+   the colour — so a debt reads the same here and in the "Должники" list. */
+function balanceView(apiBalance) {
+  const balance = Number(apiBalance || 0);
+  if (balance > 0.005) return { text: money(balance), cls: "debt", label: "долг" };
+  if (balance < -0.005) return { text: money(-balance), cls: "advance", label: "аванс" };
+  return { text: money(0), cls: "", label: "" };
+}
+
+function parseMoment(value) {
+  // Timestamps arrive from the API in ISO 8601 with an offset.
+  return new Date(value);
+}
+
+function timeOf(value) {
+  const d = parseMoment(value);
+  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+
+function dateOf(value) {
+  const d = parseMoment(value);
+  return d.getDate() + " " + MONTHS[d.getMonth()];
+}
+
+function dateWithYear(value) {
+  return dateOf(value) + " " + parseMoment(value).getFullYear();
+}
+
+function todayTitle() {
+  const now = new Date();
+  return now.getDate() + " " + MONTHS[now.getMonth()] + ", " + WEEKDAYS_LONG[(now.getDay() + 6) % 7];
+}
+
+function slotTime(value) {
+  return String(value || "").slice(0, 5);
+}
+
+function plural(count, one, few, many) {
+  if (count % 100 >= 11 && count % 100 <= 14) return many;
+  const last = count % 10;
+  if (last === 1) return one;
+  if (last >= 2 && last <= 4) return few;
+  return many;
+}
+
+/* The viewer's own day, so "today" means today on their phone. */
+function dayBounds(date) {
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return [start.toISOString(), end.toISOString()];
+}
+
+/* --- rendering helpers ---------------------------------------------------- */
+
+const screen = document.getElementById("screen");
+const title = document.getElementById("title");
+const backButton = document.getElementById("back");
+const headerAction = document.getElementById("header-action");
+
+function setHeader(text, action) {
+  title.textContent = text;
+  if (action) {
+    headerAction.hidden = false;
+    headerAction.textContent = action.text;
+    headerAction.onclick = action.onClick;
+  } else {
+    headerAction.hidden = true;
+    headerAction.onclick = null;
+  }
+}
+
+function showLoading(text) {
+  screen.innerHTML =
+    '<div class="loading"><div class="spinner"></div>' + esc(text || "Загружаю…") + "</div>";
+}
+
+function showError(error, retry) {
+  screen.innerHTML =
+    '<div class="error"><p>' + esc(error.message) +
+    '</p><button class="primary" id="retry">Попробовать снова</button></div>';
+  document.getElementById("retry").onclick = retry;
+}
+
+function emptyState(face, headline, hint) {
+  return '<div class="empty"><span class="face">' + face + "</span><p>" + esc(headline) +
+    "</p>" + (hint ? '<p class="muted">' + esc(hint) + "</p>" : "") + "</div>";
+}
+
+/* A bottom sheet with its own markup; resolves when it closes. */
+function openSheet(html, wire) {
+  const backdrop = document.createElement("div");
+  backdrop.className = "sheet-backdrop";
+  backdrop.innerHTML = '<div class="sheet">' + html + "</div>";
+  document.body.appendChild(backdrop);
+  const close = function () { backdrop.remove(); };
+  backdrop.addEventListener("click", function (event) {
+    if (event.target === backdrop) close();
+  });
+  wire(backdrop.querySelector(".sheet"), close);
+  return close;
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    // Older WebViews refuse the async clipboard; fall back to a hidden field.
+    try {
+      const field = document.createElement("textarea");
+      field.value = text;
+      field.setAttribute("readonly", "");
+      field.style.position = "fixed";
+      field.style.opacity = "0";
+      document.body.appendChild(field);
+      field.select();
+      const ok = document.execCommand("copy");
+      field.remove();
+      return ok;
+    } catch (e2) {
+      return false;
+    }
+  }
+}
+
+function toast(text) {
+  if (tg && tg.showPopup) {
+    try { tg.showPopup({ message: text, buttons: [{ type: "ok" }] }); return; } catch (e) { /* fall through */ }
+  }
+  alert(text);
+}
+
+/* --- state ---------------------------------------------------------------- */
+
+const state = {
+  tab: "today",
+  detailId: null,
+  students: [],
+  summary: null,
+  lessons: [],
+};
+
+function studentById(id) {
+  for (const student of state.students) if (student.id === id) return student;
+  return null;
+}
+
+function balanceOf(studentId) {
+  if (!state.summary) return null;
+  for (const row of state.summary.students) if (row.student_id === studentId) return row.balance;
+  return null;
+}
+
+/* --- screen: today -------------------------------------------------------- */
+
+const STATUS_LABEL = {
+  planned: "Запланировано",
+  done: "Проведено",
+  cancelled: "Отменено",
+  moved: "Перенесено",
+};
+
+function lessonRowHtml(lesson) {
+  const student = studentById(lesson.student_id);
+  const name = student ? student.name : "Ученик #" + lesson.student_id;
+  return '<div class="row">' +
+      '<span class="time">' + esc(timeOf(lesson.starts_at)) + "</span>" +
+      '<span class="grow"><span class="name">' + esc(name) + "</span>" +
+        '<div class="muted">' + esc(money(lesson.price_snapshot)) + " · " +
+        '<span class="status ' + esc(lesson.status) + '">' + esc(STATUS_LABEL[lesson.status] || lesson.status) +
+        "</span></div></span>" +
+    "</div>" +
+    '<div class="actions">' +
+      '<button class="act" data-status="done" aria-pressed="' + (lesson.status === "done") + '">Провёл</button>' +
+      '<button class="act" data-status="cancelled" aria-pressed="' + (lesson.status === "cancelled") + '">Отменил</button>' +
+    "</div>";
+}
+
+function wireLessonCard(card, lesson) {
+  card.querySelectorAll("button.act").forEach(function (button) {
+    button.onclick = async function () {
+      const status = button.dataset.status;
+      if (lesson.status === status) return;
+      haptic("medium");
+      card.querySelectorAll("button.act").forEach(function (b) { b.disabled = true; });
+      try {
+        const updated = await api("/lessons/" + lesson.id + "/status", {
+          method: "PATCH",
+          body: { status: status },
+        });
+        Object.assign(lesson, updated);
+        // Only this row is redrawn — the rest of the screen stays put.
+        card.innerHTML = lessonRowHtml(lesson);
+        wireLessonCard(card, lesson);
+        haptic("success");
+      } catch (error) {
+        haptic("error");
+        card.querySelectorAll("button.act").forEach(function (b) { b.disabled = false; });
+        toast(error.message);
+      }
+    };
+  });
+}
+
+async function renderToday() {
+  setHeader("Сегодня", null);
+  showLoading();
+  const [from, to] = dayBounds(new Date());
+  try {
+    const [lessons, students] = await Promise.all([
+      api("/lessons?starts_from=" + encodeURIComponent(from) + "&starts_to=" + encodeURIComponent(to)),
+      api("/students"),
+    ]);
+    state.students = students;
+    state.lessons = lessons;
+  } catch (error) {
+    showError(error, renderToday);
+    return;
+  }
+
+  if (!state.lessons.length) {
+    screen.innerHTML =
+      '<p class="muted" style="margin:0 0 12px">' + esc(todayTitle()) + "</p>" +
+      emptyState("🎉", "На сегодня занятий нет",
+        state.students.length ? "Отдыхайте или загляните в «Учеников»." :
+          "Добавьте первого ученика на вкладке «Ученики».");
+    return;
+  }
+
+  screen.innerHTML = '<p class="muted" style="margin:0 0 12px">' + esc(todayTitle()) + "</p>";
+  state.lessons.forEach(function (lesson) {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = lessonRowHtml(lesson);
+    wireLessonCard(card, lesson);
+    screen.appendChild(card);
+  });
+}
+
+/* --- screen: students ----------------------------------------------------- */
+
+async function loadStudentsAndBalances() {
+  const [students, summary] = await Promise.all([api("/students"), api("/tutors/me/summary")]);
+  state.students = students;
+  state.summary = summary;
+}
+
+async function renderStudents() {
+  setHeader("Ученики", { text: "+ Ученик", onClick: renderStudentForm });
+  showLoading();
+  try {
+    await loadStudentsAndBalances();
+  } catch (error) {
+    showError(error, renderStudents);
+    return;
+  }
+
+  if (!state.students.length) {
+    screen.innerHTML = emptyState("👋", "Учеников пока нет",
+      "Нажмите «+ Ученик» вверху, чтобы добавить первого.");
+    return;
+  }
+
+  const active = state.students.filter(function (s) { return s.is_active; });
+  const archived = state.students.filter(function (s) { return !s.is_active; });
+  screen.innerHTML = "";
+  renderStudentCards(active);
+  if (archived.length) {
+    const heading = document.createElement("h2");
+    heading.className = "section";
+    heading.textContent = "Архив";
+    screen.appendChild(heading);
+    renderStudentCards(archived);
+  }
+}
+
+function renderStudentCards(students) {
+  students.forEach(function (student) {
+    const balance = balanceView(balanceOf(student.id));
+    const card = document.createElement("div");
+    card.className = "card tappable";
+    card.innerHTML =
+      '<div class="row">' +
+        '<span class="grow"><span class="name">' + esc(student.name) + "</span>" +
+          '<div class="muted">' + esc(money(student.price)) + " за занятие" +
+          (student.schedule && student.schedule.length
+            ? " · " + esc(scheduleSummary(student.schedule)) : "") + "</div></span>" +
+        '<span class="amount ' + balance.cls + '">' + esc(balance.text) +
+          (balance.label ? '<div class="muted" style="text-align:right">' + balance.label + "</div>" : "") +
+        "</span>" +
+      "</div>" +
+      '<div style="margin-top:10px">' +
+        '<span class="tag' + (student.parent_chat_id ? " on" : "") + '">' +
+          (student.parent_chat_id ? "родитель подключён" : "родитель не подключён") +
+        "</span>" +
+      "</div>";
+    card.onclick = function () { renderStudentDetail(student.id); };
+    screen.appendChild(card);
+  });
+}
+
+function scheduleSummary(slots) {
+  return slots
+    .filter(function (slot) { return slot.is_active; })
+    .map(function (slot) { return WEEKDAYS_SHORT[slot.weekday] + " " + slotTime(slot.time); })
+    .join(", ");
+}
+
+/* --- screen: one student -------------------------------------------------- */
+
+async function renderStudentDetail(studentId) {
+  state.detailId = studentId;
+  showBack(function () { state.detailId = null; renderStudents(); });
+  setHeader("Ученик", null);
+  showLoading();
+
+  let student, lessons, payments, balance;
+  try {
+    [student, lessons, payments, balance] = await Promise.all([
+      api("/students/" + studentId),
+      api("/lessons?student_id=" + studentId),
+      api("/payments?student_id=" + studentId),
+      api("/students/" + studentId + "/balance"),
+    ]);
+  } catch (error) {
+    showError(error, function () { renderStudentDetail(studentId); });
+    return;
+  }
+
+  setHeader(student.name, null);
+  const view = balanceView(balance.balance);
+  const slots = (student.schedule || []).filter(function (slot) { return slot.is_active; });
+
+  screen.innerHTML =
+    '<div class="total">' +
+      '<div class="value ' + view.cls + '">' + esc(view.text) + "</div>" +
+      '<div class="label">' + (view.label ? esc(view.label) : "ничего не должен") + "</div>" +
+    "</div>" +
+    '<div class="card">' +
+      '<div class="row"><span class="grow muted">Цена занятия</span><span class="amount">' +
+        esc(money(student.price)) + "</span></div>" +
+      '<div class="row" style="margin-top:8px"><span class="grow muted">Расписание</span><span>' +
+        (slots.length ? esc(scheduleSummary(slots)) : '<span class="muted">не задано</span>') + "</span></div>" +
+      '<div class="row" style="margin-top:8px"><span class="grow muted">Родитель</span><span>' +
+        (student.parent_chat_id ? "подключён" : '<span class="muted">не подключён</span>') + "</span></div>" +
+    "</div>" +
+    '<div class="actions">' +
+      '<button class="act" id="pay">Внести оплату</button>' +
+      '<button class="act" id="invite">Пригласить родителя</button>' +
+    "</div>" +
+    (slots.length ? '<div class="actions"><button class="act" id="generate">Создать занятия на 2 недели</button></div>' : "") +
+    '<h2 class="section">Занятия</h2>' + lessonsHistoryHtml(lessons) +
+    '<h2 class="section">Оплаты</h2>' + paymentsHistoryHtml(payments);
+
+  document.getElementById("pay").onclick = function () { openPaymentSheet(student); };
+  document.getElementById("invite").onclick = function () { issueInvite(student); };
+  const generate = document.getElementById("generate");
+  if (generate) generate.onclick = function () { generateLessons(student, generate); };
+}
+
+function lessonsHistoryHtml(lessons) {
+  if (!lessons.length) {
+    return '<div class="card"><span class="muted">Занятий пока нет.</span></div>';
+  }
+  // newest first: the recent past is what a tutor checks
+  const rows = lessons.slice().reverse().slice(0, 30).map(function (lesson) {
+    return '<div class="row" style="padding:6px 0">' +
+      '<span class="grow">' + esc(dateWithYear(lesson.starts_at)) + ", " + esc(timeOf(lesson.starts_at)) +
+        '<div class="status ' + esc(lesson.status) + '">' + esc(STATUS_LABEL[lesson.status] || lesson.status) + "</div>" +
+      "</span>" +
+      '<span class="amount">' + esc(money(lesson.price_snapshot)) + "</span></div>";
+  }).join("");
+  return '<div class="card">' + rows +
+    (lessons.length > 30 ? '<p class="hint-line">Показаны последние 30 из ' + lessons.length + ".</p>" : "") +
+    "</div>";
+}
+
+function paymentsHistoryHtml(payments) {
+  if (!payments.length) {
+    return '<div class="card"><span class="muted">Оплат пока нет.</span></div>';
+  }
+  const rows = payments.slice().reverse().slice(0, 30).map(function (payment) {
+    return '<div class="row" style="padding:6px 0">' +
+      '<span class="grow">' + esc(dateWithYear(payment.paid_at)) +
+        (payment.comment ? '<div class="muted">' + esc(payment.comment) + "</div>" : "") +
+      "</span>" +
+      '<span class="amount advance">' + esc(money(payment.amount)) + "</span></div>";
+  }).join("");
+  return '<div class="card">' + rows +
+    (payments.length > 30 ? '<p class="hint-line">Показаны последние 30 из ' + payments.length + ".</p>" : "") +
+    "</div>";
+}
+
+function openPaymentSheet(student) {
+  openSheet(
+    "<h2>Оплата · " + esc(student.name) + "</h2>" +
+    '<label class="field"><span>Сумма, ₽</span>' +
+      '<input type="number" id="amount" inputmode="decimal" min="1" step="1" value="' +
+        esc(Math.round(Number(student.price) || 0)) + '"></label>' +
+    '<label class="field"><span>Комментарий (необязательно)</span>' +
+      '<input type="text" id="comment" maxlength="200" placeholder="наличные, перевод…"></label>' +
+    '<div class="actions"><button class="act" id="cancel">Отмена</button>' +
+      '<button class="primary" id="save" style="flex:1">Внести</button></div>',
+    function (sheet, close) {
+      sheet.querySelector("#cancel").onclick = close;
+      sheet.querySelector("#save").onclick = async function () {
+        const amount = Number(sheet.querySelector("#amount").value);
+        if (!(amount > 0)) {
+          haptic("error");
+          toast("Введите сумму больше нуля.");
+          return;
+        }
+        const button = sheet.querySelector("#save");
+        button.disabled = true;
+        button.textContent = "Сохраняю…";
+        haptic("medium");
+        try {
+          await api("/payments", {
+            method: "POST",
+            body: {
+              student_id: student.id,
+              amount: amount.toFixed(2),
+              comment: sheet.querySelector("#comment").value.trim() || null,
+            },
+          });
+          haptic("success");
+          close();
+          renderStudentDetail(student.id);
+        } catch (error) {
+          haptic("error");
+          button.disabled = false;
+          button.textContent = "Внести";
+          toast(error.message);
+        }
+      };
+    }
+  );
+}
+
+async function issueInvite(student) {
+  const button = document.getElementById("invite");
+  button.disabled = true;
+  try {
+    const invite = await api("/students/" + student.id + "/invite", { method: "POST", body: {} });
+    const link = invite.link;
+    const copied = link ? await copyText(link) : false;
+    haptic("success");
+    openSheet(
+      "<h2>Ссылка для родителя</h2>" +
+      "<p class=\"muted\">Одноразовая, действует до " + esc(dateWithYear(invite.expires_at)) +
+        ". Родитель откроет её и увидит баланс.</p>" +
+      '<div class="link-box">' + esc(link || ("Код приглашения: " + invite.token)) + "</div>" +
+      (link ? '<p class="hint-line">' + (copied ? "Ссылка скопирована — отправьте её родителю."
+            : "Скопируйте ссылку и отправьте её родителю.") + "</p>"
+            : '<p class="hint-line">Ссылку не собрать: в настройках сервера не задан BOT_USERNAME. ' +
+              'Отправьте родителю /start ' + esc("parent_" + invite.token) + " в чате с ботом.</p>") +
+      '<div class="actions"><button class="primary" id="ok">Готово</button></div>',
+      function (sheet, close) { sheet.querySelector("#ok").onclick = close; }
+    );
+  } catch (error) {
+    haptic("error");
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function generateLessons(student, button) {
+  button.disabled = true;
+  button.textContent = "Создаю…";
+  haptic("medium");
+  try {
+    const result = await api("/lessons/generate", {
+      method: "POST",
+      body: { student_id: student.id, days: 14 },
+    });
+    haptic("success");
+    toast(result.created
+      ? "Создано " + result.created + " " + plural(result.created, "занятие", "занятия", "занятий") + "."
+      : "Все занятия по расписанию уже созданы.");
+    renderStudentDetail(student.id);
+  } catch (error) {
+    haptic("error");
+    button.disabled = false;
+    button.textContent = "Создать занятия на 2 недели";
+    toast(error.message);
+  }
+}
+
+/* --- screen: new student -------------------------------------------------- */
+
+function renderStudentForm() {
+  showBack(renderStudents);
+  setHeader("Новый ученик", null);
+  screen.innerHTML =
+    '<div class="card">' +
+      '<label class="field"><span>Имя</span>' +
+        '<input type="text" id="name" maxlength="255" placeholder="Петя" autocomplete="off"></label>' +
+      '<label class="field"><span>Цена занятия, ₽</span>' +
+        '<input type="number" id="price" inputmode="decimal" min="0" step="50" value="1500"></label>' +
+      '<label class="field"><span>Дни занятий</span></label>' +
+      '<div class="days">' +
+        WEEKDAYS_SHORT.map(function (day, index) {
+          return '<label><input type="checkbox" value="' + index + '"><span>' + day + "</span></label>";
+        }).join("") +
+      "</div>" +
+      '<label class="field" style="margin-top:14px"><span>Время занятия</span>' +
+        '<input type="time" id="time" value="17:00"></label>' +
+      '<p class="hint-line">Выбранные дни станут расписанием — занятия по нему создаются кнопкой в карточке ученика.</p>' +
+    "</div>" +
+    '<button class="primary" id="save">Добавить ученика</button>';
+
+  screen.querySelectorAll(".days input").forEach(function (input) {
+    input.onchange = function () {
+      input.parentElement.classList.toggle("on", input.checked);
+      haptic("light");
+    };
+  });
+
+  document.getElementById("save").onclick = async function () {
+    const button = this;
+    const name = document.getElementById("name").value.trim();
+    const price = Number(document.getElementById("price").value);
+    const time = document.getElementById("time").value;
+    if (!name) { haptic("error"); toast("Как зовут ученика?"); return; }
+    if (!(price >= 0)) { haptic("error"); toast("Цена не может быть отрицательной."); return; }
+
+    const days = Array.prototype.slice
+      .call(screen.querySelectorAll(".days input:checked"))
+      .map(function (input) { return Number(input.value); });
+    if (days.length && !time) { haptic("error"); toast("Укажите время занятий."); return; }
+
+    button.disabled = true;
+    button.textContent = "Сохраняю…";
+    haptic("medium");
+    try {
+      const student = await api("/students", {
+        method: "POST",
+        body: {
+          name: name,
+          price: price.toFixed(2),
+          schedule: days.map(function (weekday) { return { weekday: weekday, time: time }; }),
+        },
+      });
+      haptic("success");
+      renderStudentDetail(student.id);
+    } catch (error) {
+      haptic("error");
+      button.disabled = false;
+      button.textContent = "Добавить ученика";
+      toast(error.message);
+    }
+  };
+}
+
+/* --- screen: money -------------------------------------------------------- */
+
+async function renderMoney() {
+  setHeader("Деньги", null);
+  showLoading();
+  try {
+    state.summary = await api("/tutors/me/summary");
+  } catch (error) {
+    showError(error, renderMoney);
+    return;
+  }
+
+  const summary = state.summary;
+  const debtors = summary.students
+    .filter(function (row) { return Number(row.balance) > 0; })
+    .sort(function (a, b) { return Number(b.balance) - Number(a.balance); });
+
+  screen.innerHTML =
+    '<div class="total">' +
+      '<div class="value' + (Number(summary.total_debt) > 0 ? " debt" : "") + '">' +
+        esc(money(summary.total_debt)) + "</div>" +
+      '<div class="label">должны все ученики</div>' +
+    "</div>" +
+    '<div class="total">' +
+      '<div class="value advance">' + esc(money(summary.month_income)) + "</div>" +
+      '<div class="label">получено в ' + esc(MONTHS[parseMoment(summary.month_start).getUTCMonth()]) + "</div>" +
+    "</div>" +
+    '<h2 class="section">Должники</h2>' +
+    (debtors.length
+      ? debtors.map(function (row) {
+          return '<div class="card"><div class="row">' +
+            '<span class="grow name">' + esc(row.name) +
+              (row.is_active ? "" : ' <span class="tag">архив</span>') + "</span>" +
+            '<span class="amount debt">' + esc(money(row.balance)) + "</span>" +
+          "</div></div>";
+        }).join("")
+      : emptyState("✅", "Долгов нет", "Все ученики рассчитались."));
+}
+
+/* --- navigation ----------------------------------------------------------- */
+
+let backHandler = null;
+
+function showBack(handler) {
+  hideBack();
+  backHandler = handler;
+  backButton.hidden = false;
+  backButton.onclick = handler;
+  if (inTelegram && tg.BackButton) {
+    try {
+      tg.BackButton.onClick(handler);
+      tg.BackButton.show();
+      backButton.hidden = true; // the client draws its own back button
+    } catch (e) { /* no native back button: keep the in-page one */ }
+  }
+}
+
+function hideBack() {
+  backButton.hidden = true;
+  backButton.onclick = null;
+  if (inTelegram && tg.BackButton && backHandler) {
+    try { tg.BackButton.offClick(backHandler); tg.BackButton.hide(); } catch (e) { /* ignore */ }
+  }
+  backHandler = null;
+}
+
+const TABS = { today: renderToday, students: renderStudents, money: renderMoney };
+
+function openTab(name) {
+  state.tab = name;
+  state.detailId = null;
+  hideBack();
+  // The tab lives in the hash, so a reload (or a link) reopens the same screen.
+  if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+  document.querySelectorAll("nav button").forEach(function (button) {
+    if (button.dataset.tab === name) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+  TABS[name]();
+}
+
+document.getElementById("nav").addEventListener("click", function (event) {
+  const button = event.target.closest("button[data-tab]");
+  if (!button) return;
+  haptic("light");
+  openTab(button.dataset.tab);
+});
+
+/* The in-page back button is only used outside Telegram; inside the client the
+   native one takes over in showBack(). */
+const startTab = location.hash.replace("#", "");
+openTab(TABS[startTab] ? startTab : "today");
+</script>
+</body>
+</html>

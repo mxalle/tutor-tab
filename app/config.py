@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # Timezone the bot speaks in: "today", schedules and dates are rendered in it.
     # Lessons themselves are always stored in UTC.
     bot_timezone: str = "Europe/Moscow"
+    # Bot username without the @, used to build parent invite deep links from
+    # the API (the bot process learns it from get_me, the API cannot).
+    bot_username: str = ""
 
 
 settings = Settings()
