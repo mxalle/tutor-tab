@@ -466,3 +466,113 @@ Telegram для Mini Apps). Проверяется, что `auth_date` не ст
 - **`X-Debug-Tutor-Id`** удобен, но это дырка ровно на случай `DEBUG=true`.
   Перед боевым деплоем стоит убедиться, что `DEBUG=false`.
 - CI на `pytest` + `alembic check`.
+
+---
+
+# Туннель для Mini App: почему падал DNS и как чинить
+
+## Симптом
+
+`cloudflared` падал на любом запросе имени:
+
+```
+lookup cfd-features.argotunnel.com on [::1]:53: read udp [::1]:...->[::1]:53:
+read: connection refused
+```
+
+При этом `networksetup -getdnsservers Wi-Fi` показывал 1.1.1.1 и 8.8.8.8,
+то есть настройки выглядели правильными.
+
+## Причина
+
+**`/etc/resolv.conf` (симлинк на `/var/run/resolv.conf`) пуст — ноль строк
+`nameserver`.** Проверяется в одну команду:
+
+```bash
+grep -c nameserver /var/run/resolv.conf   # 0 — вот и вся причина
+```
+
+Дальше всё сходится:
+
+- `scutil --dns` показывает **глобальный** `resolver #1` вообще без
+  `nameserver` и с `reach: Not Reachable`. Адреса 1.1.1.1 / 8.8.8.8 живут
+  только в **scoped**-резолвере для `en0`.
+- Глобальный резолвер пуст, потому что основным сетевым сервисом стал
+  VPN-туннель: дефолтный маршрут ведёт в `utun4` с адресом `198.18.0.1`
+  (диапазон 198.18/15 — типовой fake-ip TUN-режим), а сервис поднят
+  **Happ.app** (`Happ.app/Contents/PlugIns/Tunnel.appex`). Его
+  NetworkExtension перехватил маршрут, но глобальные DNS не прописал.
+- Никто не слушает порт 53 локально — перехватчика-демона нет, ломает
+  именно пустая конфигурация.
+
+Отсюда разное поведение у разных программ:
+
+| Через что резолвят | Работает? | Кто так делает |
+|---|---|---|
+| `getaddrinfo` (системный резолвер, scoped en0) | **да** | curl, Node, Python, ssh, Safari |
+| Чтение `/etc/resolv.conf` напрямую | **нет** | `dig`, `host`, Go-бинарники с pure-Go резолвером |
+
+`cloudflared` — Go без cgo: не найдя `nameserver`, Go по умолчанию идёт на
+`localhost:53`, где никого нет, отсюда `[::1]:53 connection refused`.
+Так что «DNS сломан» тут неверно — сломан ровно один файл, который читает
+меньшинство программ.
+
+## Что помогло, а что нет
+
+- `GODEBUG=netdns=cgo cloudflared ...` — **половина решения**. Заставляет Go
+  ходить через `getaddrinfo`; A/AAAA-запросы начинают работать, quick-туннель
+  регистрируется и выдаёт имя. Но `getaddrinfo` **не умеет SRV**, а
+  cloudflared ищет edge через `_v2-origintunneld._tcp.argotunnel.com`, и вот
+  этот запрос всё равно уходит в `[::1]:53`. Итог: имя выдано, соединения с
+  edge нет, публичный адрес отвечает ошибкой Cloudflare 1033.
+- `--edge <ip>:7844` — **не помогает**: для quick-туннелей флаг игнорируется,
+  SRV-поиск всё равно выполняется. Плюс флаг одиночный: список через запятую
+  даёт «too many colons in address», а повтор флага ломает разбор аргументов
+  (`--url` перестаёт замечаться).
+- **SSH-туннель `localhost.run`** — заработал сразу: `ssh` резолвит через
+  `getaddrinfo`, то есть пустой `resolv.conf` ему безразличен.
+
+  ```bash
+  ssh -o ServerAliveInterval=30 -R 80:localhost:8000 nokey@localhost.run
+  ```
+
+  Адрес вида `https://<hash>.lhr.life` печатается в строке
+  «tunneled with tls termination».
+
+## Как починить по-настоящему (нужен sudo)
+
+Записать nameserver в файл, который читают Go и `dig`:
+
+```bash
+sudo bash -c 'printf "nameserver 1.1.1.1\nnameserver 8.8.8.8\n" > /etc/resolv.conf'
+```
+
+Проверка — `dig` без явного сервера должен отвечать:
+
+```bash
+dig +short example.com
+```
+
+После этого `cloudflared tunnel --url http://localhost:8000` работает без
+`GODEBUG` и без `--edge`. Важно: `/var/run/resolv.conf` генерируется `configd`
+и будет перезаписан при смене сети или переподключении VPN — тогда правку надо
+повторить. Радикальный вариант — выключить TUN-режим в Happ (или сам Happ),
+после чего основным сервисом снова станет Wi-Fi и глобальный резолвер
+заполнится сам.
+
+## Побочная находка
+
+В `.env` пароль в `DATABASE_URL` (`tutortab:tutortab`) не совпадал с
+`POSTGRES_PASSWORD`, которым был создан контейнер, — `alembic upgrade head`
+падал с `InvalidPasswordError`. Раньше это не всплывало, потому что том базы
+был создан со старым паролем, а `POSTGRES_PASSWORD` на существующий том не
+влияет. После пересоздания тома несоответствие вылезло. Пароль в
+`DATABASE_URL` приведён к `POSTGRES_PASSWORD`; если меняете один — меняйте оба.
+
+## Памятка на следующий раз
+
+1. `grep -c nameserver /var/run/resolv.conf` — если 0, причина эта.
+2. Быстро: `ssh -R 80:localhost:8000 nokey@localhost.run`.
+3. Правильно: `sudo` на `/etc/resolv.conf` (выше), проверить `dig +short`.
+4. Публичный адрес класть в `MINIAPP_URL=<адрес>/app` в `.env` и
+   перезапускать бота — кнопка `web_app` читает настройку при старте.
