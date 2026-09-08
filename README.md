@@ -3,6 +3,7 @@
 Сервис для частных репетиторов: учёт учеников, занятий и оплат. Состоит из
 двух процессов поверх одной базы — HTTP API на FastAPI и Telegram-бот на
 aiogram 3. Бот ходит в базу напрямую через SQLAlchemy, а не через API.
+API заодно отдаёт Telegram Mini App — одну статическую страницу по `/app`.
 
 ## Стек
 
@@ -27,7 +28,28 @@ docker compose up -d          # postgres + redis
 ```
 
 Документация — на `http://localhost:8000/docs`, проверка живости —
-`GET /health`.
+`GET /health`, Mini App — `http://localhost:8000/app`.
+
+### Авторизация
+
+`tutor_id` в запросах больше нет: репетитор берётся из подписанной строки
+Telegram `initData`, которую Mini App присылает в каждом запросе:
+
+```
+Authorization: tma <initData>
+```
+
+Подпись проверяется HMAC-SHA256 по секрету, выведенному из токена бота
+(`app/auth.py`), `auth_date` старше 24 часов не принимается. Репетитор,
+которого ещё нет в базе, заводится автоматически — подпись уже доказала, кто он.
+
+Для локальной отладки при `DEBUG=true` работает заголовок
+`X-Debug-Tutor-Id: <id>`; в проде он игнорируется. Он же стоит за
+`?tutor=<id>` в Mini App, если открыть её в обычном браузере.
+
+```bash
+curl -H 'X-Debug-Tutor-Id: 1' localhost:8000/students   # только при DEBUG=true
+```
 
 ## Запуск Telegram-бота
 
@@ -55,11 +77,40 @@ docker compose up -d          # postgres + redis
 Без токена процесс не стартует и говорит об этом в лог. Работает на long
 polling, вебхук не нужен — то есть публичный адрес не требуется.
 
+## Mini App
+
+Страница — один файл `miniapp/index.html`, без сборки и внешних библиотек.
+FastAPI отдаёт её по `/app`, поэтому API и приложение живут на одном домене.
+
+Три экрана: **Сегодня** (занятия дня, кнопки «Провёл» и «Отменил»),
+**Ученики** (карточки с ценой, балансом и расписанием, детали, добавление,
+оплата, приглашение родителя) и **Деньги** (общий долг, доход за месяц,
+должники по убыванию).
+
+Чтобы кнопка появилась в боте:
+
+1. Поднимите API так, чтобы он был доступен по **https** — Telegram открывает
+   `web_app` только по https. В разработке подойдёт `ngrok http 8000`.
+2. Пропишите в `.env`:
+
+   ```
+   MINIAPP_URL=https://<ваш-домен>/app
+   BOT_USERNAME=<имя_бота_без_собаки>
+   ```
+
+   `BOT_USERNAME` нужен, чтобы API мог собрать ссылку-приглашение для
+   родителя; без него кнопка «Пригласить родителя» отдаёт только токен.
+3. Перезапустите бота — под приветствием `/start` появится кнопка
+   «📱 Открыть приложение».
+
+Необязательно, но удобно: в @BotFather можно прописать тот же URL как
+Menu Button, тогда приложение будет доступно из меню чата в любой момент.
+
 ### Команды репетитора
 
 | Команда | Что делает |
 |---|---|
-| `/start` | Регистрирует по `tg_id` (имя берётся из профиля Telegram) и здоровается |
+| `/start` | Регистрирует по `tg_id` (имя берётся из профиля Telegram), здоровается и даёт кнопку Mini App |
 | `/students` | Список активных учеников с балансом и суммарным долгом |
 | `/today` | Занятия на сегодня, у каждого кнопки «Провёл» и «Отменил» |
 | `/invite` | Список учеников; по выбору выдаёт ссылку для родителя |
@@ -93,7 +144,7 @@ https://t.me/<имя_бота>?start=parent_<token>
 .venv/bin/pytest
 ```
 
-72 теста на in-memory SQLite, ни Postgres, ни токен бота не нужны.
+133 теста на in-memory SQLite, ни Postgres, ни токен бота не нужны.
 
 ## Миграции
 
@@ -106,14 +157,18 @@ https://t.me/<имя_бота>?start=parent_<token>
 ## Структура
 
 ```
-app/main.py             FastAPI, lifespan, /health
+app/main.py             FastAPI, lifespan, /health, отдача Mini App по /app
+app/auth.py             проверка Telegram initData, get_current_tutor
 app/config.py           настройки (pydantic-settings, .env)
 app/database.py         async engine, session_factory, Base
-app/models.py           Tutor, Student, Lesson, Payment, ParentInvite
+app/models.py           Tutor, Student, ScheduleSlot, Lesson, Payment, ParentInvite
 app/routers/            students.py, lessons.py, payments.py
 app/services/balance.py расчёт баланса
 app/services/invites.py выдача и погашение родительских приглашений
 app/services/lessons.py диапазоны дат и смена статуса занятия
+app/services/schedule.py разворачивание расписания в занятия
+app/services/tutors.py  поиск и регистрация репетитора
+miniapp/index.html      Telegram Mini App, один файл
 bot/main.py             точка входа бота, polling
 bot/handlers/           start.py, tutor.py, parent.py
 bot/formatting.py       деньги, даты и склонения по-русски

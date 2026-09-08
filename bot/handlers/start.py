@@ -9,9 +9,15 @@ import logging
 
 from aiogram import Router
 from aiogram.filters import CommandObject, CommandStart
-from aiogram.types import Message
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+    WebAppInfo,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.services.balance import get_balance
 from app.services.invites import RedeemError, redeem_invite
 from bot.formatting import format_balance
@@ -22,6 +28,11 @@ logger = logging.getLogger(__name__)
 router = Router(name="start")
 
 PARENT_PREFIX = "parent_"
+MINIAPP_BUTTON = "📱 Открыть приложение"
+MINIAPP_HINT = (
+    "А ещё всё это есть в приложении — ученики, оплаты и занятия на сегодня "
+    "в пару тапов. Кнопка ниже 👇"
+)
 
 TUTOR_GREETING = (
     "👋 Привет, {name}!\n\n"
@@ -53,6 +64,25 @@ REDEEM_ERRORS = {
         "Попросите у репетитора новую."
     ),
 }
+
+
+def miniapp_keyboard(url: str | None = None) -> InlineKeyboardMarkup | None:
+    """A button opening the Mini App, or None when there is nothing to open.
+
+    Telegram only accepts `web_app` buttons over https and rejects the whole
+    message otherwise, so an unset or plain-http `MINIAPP_URL` means the
+    greeting simply comes without a button.
+    """
+    url = settings.miniapp_url if url is None else url
+    if not url.startswith("https://"):
+        if url:
+            logger.warning("MINIAPP_URL is not https, showing no button: %s", url)
+        return None
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=MINIAPP_BUTTON, web_app=WebAppInfo(url=url))]
+        ]
+    )
 
 
 @router.message(CommandStart(deep_link=True))
@@ -101,4 +131,8 @@ async def start_plain(message: Message, session: AsyncSession) -> None:
     )
     if not created:
         greeting = f"С возвращением, {html.escape(tutor.name)}!\n\n{TUTOR_COMMANDS}"
-    await message.answer(greeting)
+
+    keyboard = miniapp_keyboard()
+    if keyboard is not None:
+        greeting = f"{greeting}\n\n{MINIAPP_HINT}"
+    await message.answer(greeting, reply_markup=keyboard)

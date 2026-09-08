@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # Bot username without the @, used to build parent invite deep links from
     # the API (the bot process learns it from get_me, the API cannot).
     bot_username: str = ""
+    # Public https:// address of the Mini App (this app's /app path). Telegram
+    # only opens web_app buttons over https, so an empty or plain-http value
+    # means the bot simply shows no button.
+    miniapp_url: str = ""
 
 
 settings = Settings()

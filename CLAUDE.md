@@ -30,6 +30,7 @@ bot/main.py            bot entrypoint (long polling)
 bot/handlers/          start.py (both roles), tutor.py, parent.py
 bot/formatting.py      russian money / dates / plurals
 bot/middlewares.py     one DB session per update
+miniapp/index.html     Telegram Mini App: one file, no build step
 alembic/               migrations
 tests/                 pytest suite
 ```
@@ -61,18 +62,23 @@ tests/                 pytest suite
    server-side — `lesson_id` and `student_id` come from the client.
 7. Bot commands: tutor `/start`, `/students`, `/today`, `/invite`;
    parent `/start parent_<token>`, `/balance`. One account can be both roles.
-8. Tests must cover `balance.py`, the main endpoints, invites and lesson status
-   changes, and must all pass.
+   `/start` also carries a `web_app` button pointing at `MINIAPP_URL`; the
+   button is skipped unless that URL is https, which is all Telegram accepts.
+8. Tests must cover `balance.py`, the main endpoints, invites, lesson status
+   changes, `initData` verification and schedule generation, and must all pass.
 9. A student may have recurring `schedule_slots` (weekday 0-6 Monday-first,
    local wall-clock time in `BOT_TIMEZONE`). `POST /lessons/generate` turns them
    into planned lessons N days ahead and never creates a second lesson at a
    minute that already has one.
-10. Keep it small. No extra abstractions, layers or features beyond the list above.
+10. The Mini App is one file, `miniapp/index.html`: vanilla JS, no frameworks,
+   no external CSS or fonts, every colour a `--tg-theme-*` variable. FastAPI
+   serves it at `/app`, so it shares an origin with the API and needs no CORS.
+11. Keep it small. No extra abstractions, layers or features beyond the list above.
 
 ## Commands
 
 ```bash
-.venv/bin/uvicorn app.main:app --reload   # run the API
+.venv/bin/uvicorn app.main:app --reload   # run the API (Mini App on /app)
 .venv/bin/python -m bot.main              # run the Telegram bot (needs a token)
 .venv/bin/pytest                          # run tests (SQLite)
 .venv/bin/alembic upgrade head            # apply migrations (needs Postgres)
